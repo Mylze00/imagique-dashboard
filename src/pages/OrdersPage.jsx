@@ -1,118 +1,136 @@
-import React, { useEffect, useState } from "react";
-import { FaBoxOpen, FaArrowLeft } from "react-icons/fa";
+import React, { useState } from "react";
+import { auth, db } from "../firebase";
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+} from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../firebase";
 
-const ETAPES = [
-  "Payé",
-  "Validation paiement Chine",
-  "Paiement Chine",
-  "Réception Chine",
-  "Expédié",
-  "Prêt à être livré"
-];
-
-const OrdersPage = () => {
-  const [commandes, setCommandes] = useState([]);
-  const [loading, setLoading] = useState(true);
+const LoginPage = () => {
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [confirmationResult, setConfirmationResult] = useState(null);
+  const [step, setStep] = useState("choose");
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const fetchCommandes = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, "commandes"));
-        const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setCommandes(data);
-      } catch (error) {
-        console.error("Erreur de chargement :", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCommandes();
-  }, []);
+  const handleSendOTP = async () => {
+    window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha", {
+      size: "invisible",
+    });
 
-  const renderProgress = (statut) => {
-    const currentStep = ETAPES.indexOf(statut);
-    return (
-      <div className="flex items-center justify-between text-sm text-gray-600">
-        {ETAPES.map((etape, index) => (
-          <div key={etape} className="flex-1 flex flex-col items-center">
-            <div
-              className={`w-4 h-4 rounded-full z-10 ${
-                index <= currentStep ? "bg-green-500" : "bg-gray-300"
-              }`}
-            ></div>
-            <span className="mt-1 text-xs text-center px-1">{etape}</span>
-            {index < ETAPES.length - 1 && (
-              <div className={`h-1 w-full -mt-2 ${index < currentStep ? "bg-green-500" : "bg-gray-300"}`}></div>
-            )}
-          </div>
-        ))}
-      </div>
-    );
+    try {
+      const result = await signInWithPhoneNumber(auth, phone, window.recaptchaVerifier);
+      setConfirmationResult(result);
+      setStep("verifyOtp");
+      alert("📲 Code OTP envoyé");
+    } catch (err) {
+      alert("Erreur envoi OTP : " + err.message);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    try {
+      const res = await confirmationResult.confirm(otp);
+      const role = await saveUserIfFirstTime(res.user, "client");
+      alert("✅ Connexion réussie");
+      navigateToRole(role);
+    } catch (err) {
+      alert("❌ OTP invalide");
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      const res = await signInWithPopup(auth, provider);
+      const role = await saveUserIfFirstTime(res.user, "client");
+      alert("✅ Connexion Google réussie");
+      navigateToRole(role);
+    } catch (err) {
+      alert("Erreur Google : " + err.message);
+    }
+  };
+
+  const saveUserIfFirstTime = async (user, defaultRole) => {
+    const ref = doc(db, "users", user.uid);
+    const snapshot = await getDoc(ref);
+    if (!snapshot.exists()) {
+      await setDoc(ref, {
+        uid: user.uid,
+        nom: user.displayName || "",
+        email: user.email || "",
+        phone: user.phoneNumber || "",
+        role: defaultRole,
+        createdAt: new Date(),
+      });
+      return defaultRole;
+    } else {
+      return snapshot.data().role || defaultRole;
+    }
+  };
+
+  const navigateToRole = (role) => {
+    if (role === "admin") navigate("/dashboard");
+    else if (role === "agent") navigate("/commandes");
+    else navigate("/suivi"); // client par défaut
   };
 
   return (
-    <div className="p-6 min-h-screen bg-gray-100">
-      <div className="flex items-center gap-3 mb-6">
-        <FaBoxOpen className="text-2xl text-[#12063F]" />
-        <h2 className="text-2xl font-bold text-[#12063F]">Commandes enregistrées</h2>
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-tr from-indigo-700 via-purple-600 to-pink-500">
+      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+        <h2 className="text-xl font-bold mb-6 text-center text-gray-800">🔐 Connexion</h2>
+
+        {step === "choose" && (
+          <>
+            <button
+              onClick={handleGoogleLogin}
+              className="w-full mb-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
+            >
+              Se connecter avec Google
+            </button>
+
+            <hr className="my-4" />
+
+            <input
+              type="tel"
+              placeholder="+243..."
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="input w-full mb-4 border rounded p-2"
+            />
+            <div id="recaptcha"></div>
+            <button
+              onClick={handleSendOTP}
+              className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700"
+            >
+              Recevoir un code OTP
+            </button>
+          </>
+        )}
+
+        {step === "verifyOtp" && (
+          <>
+            <input
+              type="text"
+              placeholder="Entrez le code OTP"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              className="input w-full mb-4 border rounded p-2"
+            />
+            <button
+              onClick={handleVerifyOTP}
+              className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700"
+            >
+              Valider le code
+            </button>
+          </>
+        )}
       </div>
-
-      <button
-        onClick={() => navigate("/")}
-        className="mb-4 flex items-center gap-2 bg-[#12063F] text-white px-4 py-2 rounded hover:bg-[#1e1270]"
-      >
-        <FaArrowLeft /> Retour au dashboard
-      </button>
-
-      {loading ? (
-        <p>Chargement...</p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {commandes.map((cmd) => (
-            <div key={cmd.id} className="bg-white p-4 rounded-lg shadow-md">
-              <h3 className="text-lg font-bold text-[#12063F]">Client : {cmd.clientNom}</h3>
-              <p className="text-sm text-gray-500 mb-2">Date : {cmd.date}</p>
-              <div className="space-y-3">
-                {cmd.produits?.map((prod, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-4 p-2 border rounded"
-                  >
-                    <img
-                      src={prod.image}
-                      alt={prod.designation}
-                      className="h-16 w-16 rounded object-cover"
-                    />
-                    <div>
-                      <h4 className="font-semibold">{prod.designation}</h4>
-                      <p className="text-sm">Prix unitaire : {prod.prixUnitaire}$</p>
-                      <a
-                        href={prod.lien}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-500 underline text-sm"
-                      >
-                        Voir produit
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-4">
-                <p className="font-medium mb-2">Statut de la commande :</p>
-                {renderProgress(cmd.statut)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 };
 
-export default OrdersPage;
+export default LoginPage;
