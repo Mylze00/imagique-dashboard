@@ -16,6 +16,7 @@ const LoginPage = () => {
   const [step, setStep] = useState("choose");
   const navigate = useNavigate();
 
+  // 📱 Auth Phone OTP
   const handleSendOTP = async () => {
     window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha", {
       size: "invisible",
@@ -34,26 +35,28 @@ const LoginPage = () => {
   const handleVerifyOTP = async () => {
     try {
       const res = await confirmationResult.confirm(otp);
-      const role = await saveUserIfFirstTime(res.user, "client");
+      await saveUserIfFirstTime(res.user, "client");
       alert("✅ Connexion réussie");
-      navigateToRole(role);
+      await redirectAccordingToRole(res.user.uid);
     } catch (err) {
       alert("❌ OTP invalide");
     }
   };
 
+  // 🔐 Auth Google
   const handleGoogleLogin = async () => {
     const provider = new GoogleAuthProvider();
     try {
       const res = await signInWithPopup(auth, provider);
-      const role = await saveUserIfFirstTime(res.user, "client");
+      await saveUserIfFirstTime(res.user, "client");
       alert("✅ Connexion Google réussie");
-      navigateToRole(role);
+      await redirectAccordingToRole(res.user.uid);
     } catch (err) {
       alert("Erreur Google : " + err.message);
     }
   };
 
+  // 📝 Stocker nouvel utilisateur dans Firestore
   const saveUserIfFirstTime = async (user, defaultRole) => {
     const ref = doc(db, "users", user.uid);
     const snapshot = await getDoc(ref);
@@ -66,16 +69,25 @@ const LoginPage = () => {
         role: defaultRole,
         createdAt: new Date(),
       });
-      return defaultRole;
-    } else {
-      return snapshot.data().role || defaultRole;
     }
   };
 
-  const navigateToRole = (role) => {
-    if (role === "admin") navigate("/dashboard");
-    else if (role === "agent") navigate("/commandes");
-    else navigate("/suivi"); // client par défaut
+  // 🚀 Redirection automatique selon le rôle
+  const redirectAccordingToRole = async (uid) => {
+    const userRef = doc(db, "users", uid);
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      const role = snap.data().role;
+      if (role === "admin") {
+        navigate("/dashboard");
+      } else if (role === "agent") {
+        navigate("/commandes");
+      } else {
+        navigate("/suivi"); // à créer
+      }
+    } else {
+      alert("Utilisateur non trouvé.");
+    }
   };
 
   return (

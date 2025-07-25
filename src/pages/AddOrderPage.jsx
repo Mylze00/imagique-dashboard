@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
-import { useNavigate } from "react-router-dom";
 
 const AddOrderPage = () => {
-  const navigate = useNavigate();
-
   const [client, setClient] = useState("");
   const [clientsList, setClientsList] = useState([]);
   const [produits, setProduits] = useState([
@@ -38,17 +35,35 @@ const AddOrderPage = () => {
     setTotalGlobal(total);
   };
 
-  const handleImageUpload = (index, file) => {
+  const resizeImage = (file, callback) => {
     const reader = new FileReader();
-    reader.onloadend = () => {
-      const updated = [...produits];
-      updated[index].image = reader.result;
-      setProduits(updated);
-      setFilePreviews(prev => ({ ...prev, [index]: reader.result }));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 800;
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        const resizedDataUrl = canvas.toDataURL("image/jpeg", 0.7); // 70% quality
+        callback(resizedDataUrl);
+      };
+      img.src = e.target.result;
     };
-    if (file) {
-      reader.readAsDataURL(file);
-    }
+    reader.readAsDataURL(file);
+  };
+
+  const handleImageUpload = (index, file) => {
+    resizeImage(file, (resizedImage) => {
+      const updated = [...produits];
+      updated[index].image = resizedImage;
+      setProduits(updated);
+      setFilePreviews(prev => ({ ...prev, [index]: resizedImage }));
+    });
   };
 
   const addProduit = () => {
@@ -62,10 +77,14 @@ const AddOrderPage = () => {
         client,
         produits,
         total: totalGlobal,
+        etat: "Payé", // Suivi d'étape initial
         createdAt: serverTimestamp()
       });
-      alert("✅ Commande enregistrée avec succès !");
-      navigate("/"); // Retour auto après enregistrement
+      alert("✅ Commande enregistrée !");
+      setClient("");
+      setProduits([{ code: "", designation: "", lien: "", image: "", prix: "", quantite: "", total: 0 }]);
+      setFilePreviews({});
+      setTotalGlobal(0);
     } catch (error) {
       alert("❌ Erreur: " + error.message);
     }
@@ -73,13 +92,6 @@ const AddOrderPage = () => {
 
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
-      <button
-        onClick={() => navigate("/")}
-        className="mb-4 px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400"
-      >
-        ⬅ Retour au Dashboard
-      </button>
-
       <h2 className="text-2xl font-bold mb-4">📝 Ajouter une commande</h2>
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
@@ -105,11 +117,9 @@ const AddOrderPage = () => {
               <input className="input w-full mb-2" type="text" placeholder="Désignation" value={prod.designation} onChange={e => handleProduitChange(index, "designation", e.target.value)} required />
               <input className="input w-full mb-2" type="text" placeholder="Lien du produit (https://...)" value={prod.lien} onChange={e => handleProduitChange(index, "lien", e.target.value)} required />
               <input type="file" accept="image/*" className="block mb-2" onChange={(e) => handleImageUpload(index, e.target.files[0])} />
-
               {(filePreviews[index] || prod.image) && (
                 <img src={filePreviews[index] || prod.image} alt="Aperçu" className="h-32 object-cover border rounded mb-2" />
               )}
-
               <div className="grid grid-cols-2 gap-2">
                 <input className="input w-full" type="number" placeholder="Prix unitaire" value={prod.prix} onChange={e => handleProduitChange(index, "prix", e.target.value)} required />
                 <input className="input w-full" type="number" placeholder="Quantité" value={prod.quantite} onChange={e => handleProduitChange(index, "quantite", e.target.value)} required />
