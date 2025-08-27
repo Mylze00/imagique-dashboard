@@ -1,0 +1,101 @@
+import jsPDF from "jspdf";
+import "jspdf-autotable";
+
+/**
+ * Génère une facture PDF professionnelle à partir des données d'une commande
+ * @param {Object} order - Données de la commande
+ * @param {string} logo - URL ou base64 du logo Imagique
+ */
+export const generatePDF = (order, logo) => {
+  const doc = new jsPDF("p", "pt", "a4");
+
+  // === HEADER ===
+  if (logo) {
+    doc.addImage(logo, "JPEG", 40, 20, 80, 60);
+  }
+  doc.setFontSize(18);
+  doc.text("FACTURE / PROFORMA", 160, 50);
+
+  // Coordonnées entreprise
+  doc.setFontSize(10);
+  const entrepriseInfo = [
+    "Imagique Design",
+    "228, Avenue Itaga, Quartier Singa Mopepe - Lingwala",
+    "Kinshasa - Rép. Dém. du Congo",
+    "RCCM: 16-A-32002 - Id. Nat: 01-93-N08170W",
+    "N° d'Impôt : A1609215K - CNSS",
+    "Compte bancaire : 00017 - 11000 - 5052000001 - 52 (USD)",
+    "CHINE : 501, 28; Baoshi South Road, Shiyan, Baoan, Shenzen, China",
+  ];
+  entrepriseInfo.forEach((line, i) => doc.text(line, 40, 100 + i * 12));
+
+  // === INFOS COMMANDE ===
+  doc.setFontSize(11);
+  doc.text(`N° Commande : ${order.numeroCommande}`, 350, 100);
+  doc.text(`Client : ${order.client}`, 350, 115);
+  doc.text(`Date : ${new Date(order.createdAt).toLocaleDateString()}`, 350, 130);
+  doc.text(`Etat : ${order.etat}`, 350, 145);
+  doc.text(`Type Paiement : ${order.typePaiement || "Cash"}`, 350, 160);
+  doc.text(`Type Expédition : ${order.typeExpedition || "Maritime"}`, 350, 175);
+  doc.text(
+    `Délai livraison : ${
+      order.typeExpedition === "Air" ? "8 jours" : "60 jours"
+    }`,
+    350,
+    190
+  );
+  doc.text(`Destination finale : Kinshasa - RDC`, 350, 205);
+
+  // === TABLEAU PRODUITS ===
+  const tableColumn = ["#", "Produit", "Qté", "Prix Unitaire", "Total"];
+  const tableRows = [];
+
+  order.produits.forEach((prod, index) => {
+    tableRows.push([
+      index + 1,
+      prod.designation || prod.nomProduit || "Produit",
+      prod.quantite,
+      `${prod.prixAffiche || prod.prix || 0} $`,
+      `${prod.total?.toFixed(2)} $`,
+    ]);
+  });
+
+  doc.autoTable({
+    startY: 240,
+    head: [tableColumn],
+    body: tableRows,
+    styles: { fontSize: 9, halign: "center" },
+    headStyles: { fillColor: [255, 165, 0] }, // Orange style Alibaba
+  });
+
+  // === IMAGES PRODUITS ===
+  let yPos = doc.lastAutoTable.finalY + 20;
+  order.produits.forEach((prod, i) => {
+    if (prod.images && prod.images[0]) {
+      try {
+        doc.addImage(prod.images[0], "JPEG", 40, yPos, 60, 60);
+        doc.text(prod.designation || prod.nomProduit, 110, yPos + 30);
+        yPos += 70;
+      } catch (e) {
+        console.warn("Erreur ajout image produit :", e.message);
+      }
+    }
+  });
+
+  // === TOTAL ===
+  const total = order.produits.reduce((acc, p) => acc + (p.total || 0), 0);
+  doc.setFontSize(14);
+  doc.text(`💵 Total général : ${total.toFixed(2)} $`, 40, yPos + 30);
+
+  // === FOOTER ===
+  doc.setFontSize(9);
+  doc.text(
+    "NB: Cette facture inclut les frais de transport et assurances jusqu’à la livraison.",
+    40,
+    800
+  );
+  doc.text("Merci pour votre confiance !", 40, 815);
+
+  // Sauvegarde PDF
+  doc.save(`Facture_${order.numeroCommande}.pdf`);
+};

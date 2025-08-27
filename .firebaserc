@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "imagique-holding"
-  }
+    "default": "imagique-holding",
+    "imagique": "imagique-holding"
+  },
+  "targets": {},
+  "etags": {}
 }

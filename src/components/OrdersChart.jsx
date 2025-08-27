@@ -1,27 +1,66 @@
-import React from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import React, { useState } from "react";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import { Bar } from "react-chartjs-2";
 
-const data = [
-  { semaine: 'S1', commandes: 8 },
-  { semaine: 'S2', commandes: 12 },
-  { semaine: 'S3', commandes: 5 },
-  { semaine: 'S4', commandes: 15 },
-  { semaine: 'S5', commandes: 10 },
-];
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-const OrdersChart = () => {
+const OrdersChart = ({ orders }) => {
+  const [filter, setFilter] = useState("mois");
+
+  const grouped = {};
+  orders.forEach((order) => {
+    const date = order.createdAt?.toDate?.() || new Date();
+    const key =
+      filter === "jour"
+        ? date.toLocaleDateString()
+        : `${date.getMonth() + 1}/${date.getFullYear()}`;
+
+    if (!grouped[key]) grouped[key] = { total: 0, count: 0 };
+    grouped[key].total += order.total || 0;
+    grouped[key].count += 1;
+  });
+
+  const labels = Object.keys(grouped);
+  const totals = labels.map((key) => grouped[key].total);
+  const counts = labels.map((key) => grouped[key].count);
+
+  const data = {
+    labels,
+    datasets: [
+      {
+        label: "Revenu ($)",
+        data: totals,
+        backgroundColor: "rgba(59, 130, 246, 0.6)",
+      },
+      {
+        label: "Nombre de commandes",
+        data: counts,
+        backgroundColor: "rgba(16, 185, 129, 0.6)",
+      },
+    ],
+  };
+
   return (
-    <div className="bg-white rounded-xl shadow-md p-4 mt-6">
-      <h2 className="text-lg font-semibold mb-4 text-gray-700">Progression des commandes par semaine</h2>
-      <ResponsiveContainer width="100%" height={250}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="semaine" />
-          <YAxis allowDecimals={false} />
-          <Tooltip />
-          <Line type="monotone" dataKey="commandes" stroke="#3b82f6" strokeWidth={2} />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="transform scale-90 origin-top">
+      <div className="flex justify-end mb-2">
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="border rounded p-1 text-sm"
+        >
+          <option value="jour">Jour</option>
+          <option value="mois">Mois</option>
+        </select>
+      </div>
+      <Bar data={data} />
     </div>
   );
 };

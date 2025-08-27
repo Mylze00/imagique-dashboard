@@ -1,145 +1,145 @@
 import React, { useState } from "react";
 import { auth, db } from "../firebase";
-import {
-  GoogleAuthProvider,
-  signInWithPopup,
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
-} from "firebase/auth";
+import { GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
+import logo from "../assets/logo-imagique.png";
 
 const LoginPage = () => {
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [confirmationResult, setConfirmationResult] = useState(null);
-  const [step, setStep] = useState("choose");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const navigate = useNavigate();
 
-  // 📱 Auth Phone OTP
-  const handleSendOTP = async () => {
-    window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha", {
-      size: "invisible",
-    });
+  const adminEmails = [
+    "congoalibaba@gmail.com",
+    "plilembo@gmail.com",
+    "fabricekibazola@gmail.com",
+  ];
 
-    try {
-      const result = await signInWithPhoneNumber(auth, phone, window.recaptchaVerifier);
-      setConfirmationResult(result);
-      setStep("verifyOtp");
-      alert("📲 Code OTP envoyé");
-    } catch (err) {
-      alert("Erreur envoi OTP : " + err.message);
-    }
-  };
-
-  const handleVerifyOTP = async () => {
-    try {
-      const res = await confirmationResult.confirm(otp);
-      await saveUserIfFirstTime(res.user, "client");
-      alert("✅ Connexion réussie");
-      await redirectAccordingToRole(res.user.uid);
-    } catch (err) {
-      alert("❌ OTP invalide");
-    }
-  };
-
-  // 🔐 Auth Google
   const handleGoogleLogin = async () => {
-    const provider = new GoogleAuthProvider();
     try {
-      const res = await signInWithPopup(auth, provider);
-      await saveUserIfFirstTime(res.user, "client");
-      alert("✅ Connexion Google réussie");
-      await redirectAccordingToRole(res.user.uid);
-    } catch (err) {
-      alert("Erreur Google : " + err.message);
-    }
-  };
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
 
-  // 📝 Stocker nouvel utilisateur dans Firestore
-  const saveUserIfFirstTime = async (user, defaultRole) => {
-    const ref = doc(db, "users", user.uid);
-    const snapshot = await getDoc(ref);
-    if (!snapshot.exists()) {
-      await setDoc(ref, {
-        uid: user.uid,
-        nom: user.displayName || "",
-        email: user.email || "",
-        phone: user.phoneNumber || "",
-        role: defaultRole,
-        createdAt: new Date(),
-      });
-    }
-  };
+      const role = adminEmails.includes(user.email) ? "admin" : "client";
 
-  // 🚀 Redirection automatique selon le rôle
-  const redirectAccordingToRole = async (uid) => {
-    const userRef = doc(db, "users", uid);
-    const snap = await getDoc(userRef);
-    if (snap.exists()) {
-      const role = snap.data().role;
-      if (role === "admin") {
-        navigate("/dashboard");
-      } else if (role === "agent") {
-        navigate("/commandes");
-      } else {
-        navigate("/suivi"); // à créer
+      const userRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(userRef);
+      if (!docSnap.exists()) {
+        await setDoc(userRef, {
+          email: user.email,
+          displayName: user.displayName,
+          role,
+        });
       }
-    } else {
-      alert("Utilisateur non trouvé.");
+
+      localStorage.setItem("user", JSON.stringify({ ...user, role }));
+      navigate("/dashboard"); // ✅ redirection vers dashboard
+    } catch (error) {
+      console.error("Google login error:", error);
+      alert("Google login failed");
+    }
+  };
+
+  const handleEmailLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      const user = result.user;
+
+      const role = adminEmails.includes(user.email) ? "admin" : "client";
+
+      const userRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(userRef);
+      if (!docSnap.exists()) {
+        await setDoc(userRef, {
+          email: user.email,
+          displayName: user.displayName || email,
+          role,
+        });
+      }
+
+      localStorage.setItem("user", JSON.stringify({ ...user, role }));
+      navigate("/dashboard"); // ✅ redirection vers dashboard
+    } catch (error) {
+      console.error("Email login error:", error);
+      alert("Login failed: " + error.message);
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-tr from-indigo-700 via-purple-600 to-pink-500">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h2 className="text-xl font-bold mb-6 text-center text-gray-800">🔐 Connexion</h2>
+    <div className="relative flex flex-col items-center justify-center h-screen overflow-hidden">
+      {/* Background Gradient & bubbles */}
+      <div className="absolute inset-0 bg-gradient-to-br from-red-600 via-black via-yellow-400 to-pink-500 animate-gradient" />
+      {[...Array(12)].map((_, i) => (
+        <div
+          key={i}
+          className="bubble absolute bg-white opacity-20 rounded-full"
+          style={{
+            width: `${Math.random() * 40 + 10}px`,
+            height: `${Math.random() * 40 + 10}px`,
+            left: `${Math.random() * 100}%`,
+            bottom: `-${Math.random() * 100}px`,
+            animationDuration: `${Math.random() * 10 + 10}s`,
+            animationDelay: `${Math.random() * 10}s`,
+          }}
+        ></div>
+      ))}
 
-        {step === "choose" && (
-          <>
-            <button
-              onClick={handleGoogleLogin}
-              className="w-full mb-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
-            >
-              Se connecter avec Google
-            </button>
+      <div className="relative z-10 bg-white bg-opacity-10 backdrop-blur-md p-8 rounded-xl shadow-lg w-96 border border-white border-opacity-20 transition-transform duration-500 ease-in-out transform hover:scale-105 neon-shadow">
+        <div className="flex justify-center mb-6">
+          <img src={logo} alt="Imagique" className="h-16" />
+        </div>
+        <h2 className="text-2xl font-semibold text-center mb-4 text-white">Connexion</h2>
 
-            <hr className="my-4" />
-
+        <form onSubmit={handleEmailLogin} className="space-y-4">
+          <input
+            type="email"
+            placeholder="Email"
+            className="w-full px-4 py-2 border rounded-lg bg-white bg-opacity-20 text-white placeholder-gray-200"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <input
+            type="password"
+            placeholder="Mot de passe"
+            className="w-full px-4 py-2 border rounded-lg bg-white bg-opacity-20 text-white placeholder-gray-200"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <div className="flex items-center text-white">
             <input
-              type="tel"
-              placeholder="+243..."
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="input w-full mb-4 border rounded p-2"
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="mr-2"
             />
-            <div id="recaptcha"></div>
-            <button
-              onClick={handleSendOTP}
-              className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700"
-            >
-              Recevoir un code OTP
-            </button>
-          </>
-        )}
+            <span>Se souvenir de moi</span>
+          </div>
+          <button
+            type="submit"
+            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
+          >
+            Se connecter
+          </button>
+        </form>
 
-        {step === "verifyOtp" && (
-          <>
-            <input
-              type="text"
-              placeholder="Entrez le code OTP"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              className="input w-full mb-4 border rounded p-2"
-            />
-            <button
-              onClick={handleVerifyOTP}
-              className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700"
-            >
-              Valider le code
-            </button>
-          </>
-        )}
+        <div className="mt-6">
+          <button
+            onClick={handleGoogleLogin}
+            className="w-full bg-red-500 text-white py-2 rounded-lg hover:bg-red-600"
+          >
+            Connexion avec Google
+          </button>
+        </div>
+      </div>
+
+      <div className="absolute bottom-4 text-white text-sm opacity-70">
+        Alimenté par Alibaba Group
       </div>
     </div>
   );

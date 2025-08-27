@@ -1,23 +1,43 @@
-// src/firebase.js
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { getFirestore, setLogLevel } from "firebase/firestore";
+import { getAuth, RecaptchaVerifier } from "firebase/auth";
+import { getStorage } from "firebase/storage";
 
-// ✅ Ta config Firebase
+// ✅ Configuration Firebase pour Imagique Holding
 const firebaseConfig = {
   apiKey: "AIzaSyAbswMvuB3kHMVZk2D9SeoQHBpmG9hZgwU",
   authDomain: "imagique-holding.firebaseapp.com",
   projectId: "imagique-holding",
-  storageBucket: "imagique-holding.appspot.com",
+  storageBucket: "imagique-holding.firebasestorage.app",
   messagingSenderId: "62617776910",
   appId: "1:62617776910:web:5da1183e6e8444571a9d5f",
-  measurementId: "G-TVSCD2N4V4"
+  measurementId: "G-TVSCD2N4V4",
 };
 
-// ⚙️ Initialisation
+// ⚙️ Initialisation Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const auth = getAuth(app); // 🔥 ajout important
+setLogLevel("silent"); // 🔹 désactiver logs Firestore
+const auth = getAuth(app);
+const storage = getStorage(app);
 
-// ✅ Exports
-export { db, auth };
+// ✅ Initialiser Recaptcha
+export const initRecaptcha = () => {
+  if (!window.recaptchaVerifier) {
+    window.recaptchaVerifier = new RecaptchaVerifier(
+      "recaptcha-container",
+      {
+        size: "invisible",
+        callback: (response) => {
+          console.log("✅ reCAPTCHA vérifié :", response);
+        },
+        "expired-callback": () => {
+          console.warn("⚠️ reCAPTCHA expiré");
+        },
+      },
+      auth
+    );
+  }
+};
+
+export { db, auth, storage };
