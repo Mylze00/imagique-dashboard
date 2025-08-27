@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import {
   collection,
   onSnapshot,
@@ -10,10 +10,11 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useNavigate } from "react-router-dom";
-import Sidebar from "../components/Sidebar"; // Garder l'import pour le desktop
-import Header from "../components/Header"; // Garder l'import pour le desktop
+import Sidebar from "../components/Sidebar";
+import Header from "../components/Header";
 
 const PAGE_SIZE = 12;
+const CACHE_KEY = "store_products_cache";
 
 const categoriesList = [
   { key: "all", label: "Tout" },
@@ -24,7 +25,63 @@ const categoriesList = [
   { key: "maison", label: "Maison" },
 ];
 
-const CACHE_KEY = "store_products_cache";
+const mergeProducts = (existing, incoming) => {
+  const merged = [...existing];
+  incoming.forEach((prod) => {
+    if (!merged.find((p) => p.code === prod.code)) merged.push(prod);
+  });
+  return merged;
+};
+
+const ProductCard = ({ prod, isNewProduct, lastRef }) => (
+  <div
+    ref={lastRef}
+    className={`relative bg-white rounded-lg shadow-sm p-2 flex flex-col ${
+      (prod.quantite || 0) === 0 ? "opacity-60" : ""
+    }`}
+  >
+    <div className="relative w-full aspect-square bg-gray-100 rounded-md overflow-hidden mb-2">
+      <img
+        src={prod.imageProduit || prod.images?.[0]}
+        alt={prod.nomProduit || prod.designation}
+        className="w-full h-full object-cover"
+        loading="lazy"
+      />
+    </div>
+    <h3 className="font-semibold text-gray-800 text-xs line-clamp-2 min-h-[30px]">
+      {prod.nomProduit || prod.designation}
+    </h3>
+    <div className="flex-1"></div>
+    <span className="text-green-700 font-bold text-xs mt-1">
+      💵{" "}
+      {(
+        parseFloat(prod.prixCommande || prod.total || prod.prix || prod.montant || 0) || 0
+      ).toFixed(2)}{" "}
+      $
+    </span>
+    <span className="text-[10px] text-gray-500 mb-2">Stock : {prod.quantite || 0}</span>
+    {prod.source === "commande" && (
+      <span className="absolute top-3 right-3 bg-blue-500 text-white text-[9px] px-2 py-0.5 rounded-full shadow-md font-semibold">
+        📦 Commandé
+      </span>
+    )}
+    <button
+      disabled={(prod.quantite || 0) === 0}
+      className={`mt-auto px-2 py-1 rounded-full text-[10px] font-medium transition-colors ${
+        (prod.quantite || 0) === 0
+          ? "bg-gray-400 text-white cursor-not-allowed"
+          : "bg-blue-600 hover:bg-blue-700 text-white"
+      }`}
+    >
+      Commander
+    </button>
+    {isNewProduct(prod) && (
+      <span className="absolute top-3 left-3 bg-red-500 text-white text-[9px] px-2 py-0.5 rounded-full shadow-md font-semibold">
+        🔥 Nouveau
+      </span>
+    )}
+  </div>
+);
 
 const ProduitsEvaluesPage = () => {
   const [produits, setProduits] = useState([]);
@@ -58,19 +115,11 @@ const ProduitsEvaluesPage = () => {
           ...docSnap.data(),
           source: "evalué",
         }));
-        setProduits((prev) => {
-          const merged = [...list];
-          prev.forEach((prod) => {
-            if (!merged.find((p) => p.code === prod.code)) {
-              merged.push(prod);
-            }
-          });
-          return merged;
-        });
+        setProduits((prev) => mergeProducts(prev, list));
         setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
         localStorage.setItem(
           CACHE_KEY,
-          JSON.stringify({ data: list, lastDoc: snapshot.docs[snapshot.docs.length - 1] })
+          JSON.stringify({ data: mergeProducts([], list), lastDoc: snapshot.docs[snapshot.docs.length - 1] })
         );
         setLoading(false);
       }
@@ -94,13 +143,7 @@ const ProduitsEvaluesPage = () => {
             });
           }
         });
-        setProduits((prev) => {
-          const merged = [...prev];
-          allProducts.forEach((prod) => {
-            if (!merged.find((p) => p.code === prod.code)) merged.push(prod);
-          });
-          return merged;
-        });
+        setProduits((prev) => mergeProducts(prev, allProducts));
       }
     );
 
@@ -161,35 +204,37 @@ const ProduitsEvaluesPage = () => {
     return daysDiff <= 7;
   };
 
-  let filteredProduits = produits.filter((p) => {
-    const matchSearch =
-      p.nomProduit?.toLowerCase().includes(search.toLowerCase()) ||
-      p.designation?.toLowerCase().includes(search.toLowerCase());
-    const matchCategory =
-      category === "all" || p.categorie?.toLowerCase() === category.toLowerCase();
-    const matchType =
-      filterType === "all" ||
-      (filterType === "commande" && p.source === "commande") ||
-      (filterType === "evalué" && p.source === "evalué");
+  const filteredProduits = useMemo(() => {
+    let filtered = produits.filter((p) => {
+      const matchSearch =
+        p.nomProduit?.toLowerCase().includes(search.toLowerCase()) ||
+        p.designation?.toLowerCase().includes(search.toLowerCase());
+      const matchCategory = category === "all" || p.categorie?.toLowerCase() === category.toLowerCase();
+      const matchType =
+        filterType === "all" ||
+        (filterType === "commande" && p.source === "commande") ||
+        (filterType === "evalué" && p.source === "evalué");
+      return matchSearch && matchCategory && matchType;
+    });
 
-    return matchSearch && matchCategory && matchType;
-  });
+    if (sort === "prix-asc") {
+      filtered.sort(
+        (a, b) =>
+          parseFloat(a.prixCommande || a.total || a.prix || a.montant || 0) -
+          parseFloat(b.prixCommande || b.total || b.prix || b.montant || 0)
+      );
+    } else if (sort === "prix-desc") {
+      filtered.sort(
+        (a, b) =>
+          parseFloat(b.prixCommande || b.total || b.prix || b.montant || 0) -
+          parseFloat(a.prixCommande || a.total || a.prix || a.montant || 0)
+      );
+    } else if (sort === "quantite") {
+      filtered.sort((a, b) => (b.quantite || 0) - (a.quantite || 0));
+    }
 
-  if (sort === "prix-asc") {
-    filteredProduits.sort(
-      (a, b) =>
-        parseFloat(a.prixCommande || a.total || a.prix || a.montant || 0) -
-        parseFloat(b.prixCommande || b.total || b.prix || b.montant || 0)
-    );
-  } else if (sort === "prix-desc") {
-    filteredProduits.sort(
-      (a, b) =>
-        parseFloat(b.prixCommande || b.total || b.prix || b.montant || 0) -
-        parseFloat(a.prixCommande || a.total || a.prix || a.montant || 0)
-    );
-  } else if (sort === "quantite") {
-    filteredProduits.sort((a, b) => (b.quantite || 0) - (a.quantite || 0));
-  }
+    return filtered;
+  }, [produits, search, category, sort, filterType]);
 
   return (
     <div className="flex bg-gray-50 min-h-screen">
@@ -197,7 +242,6 @@ const ProduitsEvaluesPage = () => {
       <div className="flex-1 flex flex-col">
         <Header className="hidden sm:block" />
         <main className="p-2 sm:p-4">
-          {/* Bouton retour mobile */}
           <button
             onClick={() => navigate("/dashboard")}
             className="sm:hidden mb-4 bg-gray-200 text-gray-700 px-4 py-2 rounded-full shadow-sm text-sm flex items-center"
@@ -209,12 +253,7 @@ const ProduitsEvaluesPage = () => {
               viewBox="0 0 24 24"
               stroke="currentColor"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             Retour
           </button>
@@ -253,7 +292,7 @@ const ProduitsEvaluesPage = () => {
                 onChange={(e) => setFilterType(e.target.value)}
               >
                 <option value="all">Tous</option>
-                <option value="commande">Produits Commandes</option>
+                <option value="commande">Produits Commandés</option>
                 <option value="evalué">Produits Évalués</option>
               </select>
             </div>
@@ -284,58 +323,12 @@ const ProduitsEvaluesPage = () => {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {filteredProduits.map((prod, index) => (
-                <div
+                <ProductCard
                   key={prod.id || index}
-                  ref={index === filteredProduits.length - 1 ? lastProductRef : null}
-                  className={`relative bg-white rounded-lg shadow-sm hover:shadow-md transition-all p-2 flex flex-col ${
-                    (prod.quantite || 0) === 0 ? "opacity-60" : ""
-                  }`}
-                >
-                  <div className="relative w-full aspect-square bg-gray-100 rounded-md overflow-hidden mb-2">
-                    <img
-                      src={prod.imageProduit || prod.images?.[0]}
-                      alt={prod.nomProduit || prod.designation}
-                      loading="lazy"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <h3 className="font-semibold text-gray-800 text-xs line-clamp-2 min-h-[30px]">
-                    {prod.nomProduit || prod.designation}
-                  </h3>
-                  <div className="flex-1"></div> {/* Spacer to push button to bottom */}
-                  <span className="text-green-700 font-bold text-xs mt-1">
-                    💵{" "}
-                    {(
-                      parseFloat(
-                        prod.prixCommande || prod.total || prod.prix || prod.montant || 0
-                      ) || 0
-                    ).toFixed(2)}{" "}
-                    $
-                  </span>
-                  <span className="text-[10px] text-gray-500 mb-2">
-                    Stock : {prod.quantite || 0}
-                  </span>
-                  {prod.source === "commande" && (
-                    <span className="absolute top-3 right-3 bg-blue-500 text-white text-[9px] px-2 py-0.5 rounded-full shadow-md font-semibold">
-                      📦 Commandé
-                    </span>
-                  )}
-                  <button
-                    disabled={(prod.quantite || 0) === 0}
-                    className={`mt-auto px-2 py-1 rounded-full text-[10px] font-medium transition-colors ${
-                      (prod.quantite || 0) === 0
-                        ? "bg-gray-400 text-white cursor-not-allowed"
-                        : "bg-blue-600 hover:bg-blue-700 text-white"
-                    }`}
-                  >
-                    Commander
-                  </button>
-                  {isNewProduct(prod) && (
-                    <span className="absolute top-3 left-3 bg-red-500 text-white text-[9px] px-2 py-0.5 rounded-full shadow-md font-semibold">
-                      🔥 Nouveau
-                    </span>
-                  )}
-                </div>
+                  prod={prod}
+                  isNewProduct={isNewProduct}
+                  lastRef={index === filteredProduits.length - 1 ? lastProductRef : null}
+                />
               ))}
             </div>
           )}
